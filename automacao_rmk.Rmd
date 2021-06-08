@@ -1,0 +1,555 @@
+---
+title: "Final Mentoria in Gov"
+author: "Danilo Gonçalves"
+date: "04/06/2021"
+output:
+  html_document:
+     df_print: paged
+  ioslides_presentation: default
+---
+
+# O Desafio
+
+# O Script
+
+## Pacotes
+
+1. Listas de comandos do R que foram usadas.   
+```{r, message = FALSE, results = 'hide'}
+
+# O primeiro foi o pacman, e dele foi utilizada apenas uma função para deixar o código menos extenso nesse momento. 
+pacman::p_load( # A p_load tem como função utilizar o comando library (que abre pacotes) para mais de um pacote, e caso algum não esteja instalado ela o instala e o abre.  
+    pdftools, # Ler PDFs 
+    tidyverse, # Comandos e filtragem e uso do %>% (pipe).
+    textreadr, tm, tidytext, tidyr, stringr, dplyr, # Padronização de texto.
+    writexl) # Exportar um data frame como tabela xlsx.
+
+```
+
+
+## Dados
+
+1. São diversos arquivos PDF.  
+2. Aqui foi utilizada uma pasta teste com vários tipos diferentes de declarações.  
+2.1 Isso se deu para que caso uma fosse parecida com outra e houvesse alguma confusão isso pudesse ser detectado.  
+3. O primeiro passo foi criar uma lista com todos os documentos presentes na pasta.  
+4. Depois foi necessário fazer o R abrir todos aqueles documentos.  
+5. Organizando os dados.   
+5.1 Transformar o objeto "Documentos" do formato lista para o de Data Frama.  
+5.2 Atribuir os nomes aos documentos.  
+5.3 Padronizar o texto.  
+
+
+## Dados (Passo 3 -  Lista de documentos)
+
+```{r}
+
+Documentos.Lista <- list.files(path = "C:/Users/Danilo/Desktop/Coisas Relevantes/Trabalhos em andamento/Usina/Dados/Documentos/Teste", # Selecionar a pasta
+                               pattern = ".pdf$") # Selecionar o tipo de arquivo
+
+Documentos.Lista <- as.data.frame(Documentos.Lista) # Transformar a lista em um data frame
+
+Documentos.Lista$ID <- 1:nrow(Documentos.Lista) # Aqui se cria uma coluna que coloque o ID, sendo de 1 a o número de linhas do data frame
+
+```
+
+
+## Dados (Passo 4 - Abrindo os PDFs)
+
+```{r, message = FALSE, results = 'hide'}
+
+setwd("C:/Users/Danilo/Desktop/Coisas Relevantes/Trabalhos em andamento/Usina/Dados/Documentos/Teste")
+# Selecionando uma pasta
+
+## Aplicar essa função para abrir todos de uma vez, mas eles serão abertos de forma de lista, precisando posteriormente serem transformados em um data frame
+
+Documentos <- lapply(Documentos.Lista$Documentos.Lista, FUN = function(files) {
+  # Ali estão os "Documentos.Lista$Documentos.Lista" que é a coluna com os nomes dos documentos igualando eles ao files da função
+  read_pdf(files, # Aqui está sendo mandando ler os PDFs em "files" ou seja em "Documentos.Lista$Documentos.Lista"
+           ocr = T) # Isso aqui por sua vez é para que se leia sem problemas os acentos e ç
+  
+})
+
+```
+
+
+## Dados (Passo 5 - Organizando)
+
+```{r}
+# Transformar o objeto de formato lista em formato data frame
+Documentos <- bind_rows(Documentos, .id = "ID")
+
+# Atribuindo o nome do documento a o ID dele
+Documentos$Documento <- Documentos.Lista[Documentos$ID,1]
+
+# Formatação de texto
+Documentos$text <- Documentos$text %>%
+  str_to_lower() %>% # Jogar tudo pra minúsculo
+  str_squish() %>% # Retirar espaço
+  iconv(from="UTF-8",to="ASCII//TRANSLIT") # Remover ç e acentuações (´ ^ ~)
+
+```
+
+## Identificação do tipo de documento
+
+1. Agregar o texto.  
+1.1 O R lê os documentos linha a linha, mas os tipos de declarações tem mais de uma característica que os identifica, por isso foi necessário juntar essas linhas para que fossem identificadas um conjunto de características.   
+
+```{r}
+
+Docsss <- aggregate(text ~ Documento # Criar um novo objeto agregando a coluna text pela categoria na coluna documento
+                    , data = Documentos, # Selecionando a base de dados
+                    paste, collapse = " ") # Separando o texto agregado por espaço
+
+```
+
+
+## Identificação do tipo de documento
+
+```{r}
+
+# Certidão de regularidade fiscal
+
+Docsss$OQue <-  ifelse( # Caso
+  grepl("certidao de regularidade fiscal", Docsss$text) & # Esse & no lugar da vígula é crucial para que sejam identificadas mais de uma característica
+    grepl("perante a fazenda publica estadual", Docsss$text), # Identificar trecho de texto
+  "CertReguFiscal", # Se identificados os dois trechos é uma "CertReguFiscal"
+  NA) # Caso não, não preencher com nada
+
+```
+
+
+## Identificação do tipo de documento
+
+```{r}
+
+# Prestação de contas - Cert Negativa
+
+Docsss$OQue <- ifelse(grepl("https://efisco.sefaz.pe.gov.br/sfi_com_sca/prmontarmenuacesso", Docsss$text) & 
+                        grepl("lei 7.741/78", Docsss$text) &
+                        grepl("nao se encontra em atraso", Docsss$text) &
+                        grepl("na entrega de prestacao de contas", Docsss$text) &
+                        grepl("de transferencia por convenio junto ao governo do estado de pernambuco", Docsss$text),
+                      "PC - CertNeg", 
+                      Docsss$OQue) # A partir daqui se colocar o que já existia antes na variável caso não seja achado os itens que se pediu
+
+
+```
+
+
+<!----
+Já o exemplo já foi dado, a partir daqui não vai aparecer no slide para ele não ficar gigante
+--->
+
+```{r, echo = FALSE}
+
+## Prestação de contas - Não cadastrado
+
+Docsss$OQue <- ifelse(grepl("nao apresentando", Docsss$text) & 
+                        grepl("pendencias de prestacao de contas ate a presente data", Docsss$text)&
+                        grepl("nao se encontra cadastrado", Docsss$text) &
+                        grepl("sistema de execucao orcamentaria", Docsss$text),
+                      "PC - NCadastr", 
+                      Docsss$OQue)
+
+## Prestação de contas - Inadiplencia
+
+Docsss$OQue <- ifelse(grepl("pendencias junto ao governo do estado de pernambuco", Docsss$text) &
+                        grepl("artigo 207, da lei 7.741/78, e do artigo 5",Docsss$text) & 
+                        grepl("incisos xxxiii e xxxiv", Docsss$text) &
+                        grepl("alinea b, da constituicao federal de 1988", Docsss$text), 
+                      "PC - Inadi", 
+                      Docsss$OQue)
+
+## Prestação de contas - Positiva com efeito negativa
+
+Docsss$OQue <- ifelse(grepl("certidao de regularidade de prestacao de contas", Docsss$text) &
+                        grepl("positiva com efeito de negativa", Docsss$text) &
+                        grepl("mesmo estando inadimplente", Docsss$text) &
+                        grepl("suspensa a situacao de irregularidade", Docsss$text), 
+                      "PC - PosiNeg", 
+                      Docsss$OQue)
+
+## CRF - Certidão negativa
+
+Docsss$OQue <- ifelse(grepl("nao sao suficientes", Docsss$text) &
+                        grepl("impedimentos", Docsss$text),
+                      "CRF - Negativa",
+                      Docsss$OQue)
+
+## CRF - Positiva
+
+Docsss$OQue <- ifelse(grepl("caixa economica federal", Docsss$text) & 
+                        grepl("certifica", Docsss$text) &
+                        grepl("regular", Docsss$text) &
+                        grepl("fundo de garantia do tempo de servico", Docsss$text) &
+                        grepl("fgts", Docsss$text) &
+                        grepl("www.caixa.gov.br", Docsss$text),
+                      "CRF - Positiva",
+                      Docsss$OQue)
+
+## Comprovante de situação cadastral no CPF
+
+Docsss$OQue <- ifelse(grepl("este documento nao substitui o", Docsss$text) &
+                                   grepl("comprovante de situacao cadastral no cpf", Docsss$text) &
+                                   grepl("https://servicos.receita.fazenda.gov.br/servicos/cpf/consultasituacao", Docsss$text),
+                                 "CompSituCPF",
+                                 Docsss$OQue)
+
+## Certidão negativa de débitos trabalhistas
+
+Docsss$OQue <- ifelse(grepl("certifica-se", Docsss$text) &
+                        grepl("http://www.tst.jus.br", Docsss$text) &
+                        grepl("autenticidade no portal do tribunal superior do trabalho", Docsss$text) &
+                        grepl("art. 642-a da consolidacao das leis do trabalho", Docsss$text) &
+                        grepl("acrescentado pela lei no 12.440", Docsss$text) &
+                        grepl("de 7 de julho de 2011", Docsss$text) &
+                        grepl("resolucao administrativa no 1470/2011", Docsss$text) &
+                        grepl("poder judiciario", Docsss$text) &
+                        grepl("justica do trabalho", Docsss$text),
+                      "Cert. Negativa de Deb. Trabalhistas",
+                      Docsss$OQue)
+
+## Certidão positiva com efeito de negativa de débitos trabalhistas
+Docsss$OQue <-  ifelse(grepl("a certidao positiva de debitos trabalhistas, com os mesmos efeitos", Docsss$text) &
+                         grepl("da negativa", Docsss$text) &
+                         grepl("com efeito de negativa", Docsss$text),
+                      "Cert. Posi. com efeito de Negativa de Deb. Trabalhistas",
+                      Docsss$OQue)
+
+## Certidão de Regularidade Fiscal perante a Fazenda Federal relativa a tributos e à Seguridade Social
+
+Docsss$OQue <-  ifelse(grepl("certidao negativa de debitos", Docsss$text) &
+                         grepl("relativos aos tributos federais", Docsss$text) &
+                         grepl("ativa da uniao", Docsss$text) &
+                         grepl("nao constam pendencias em seu nome", Docsss$text) &
+                         grepl("fazenda nacional", Docsss$text),
+                       "Cert. Regul. Fazenda Federal",
+                       Docsss$OQue)
+
+## Positiva com efeito de negativa Certidão de Regularidade Fiscal perante a Fazenda Federal relativa a tributos e à Seguridade Social
+Docsss$OQue <-  ifelse(grepl("certidao positiva com efeitos de negativa", Docsss$text) &
+                         grepl("federais e a divida ativa da uniao", Docsss$text) &
+                         grepl("constam debitos administrados", Docsss$text) &
+                         grepl("conforme disposto nos arts. 205 e 206 do ctn, este documento tem os mesmos efeitos", Docsss$text),
+                       "Cert. Regul. Fazenda Federal - PosiNeg",
+                       Docsss$OQue)
+
+```
+
+
+## Dando nome aos bois
+
+```{r}
+
+# Tirando o texto grosso pra facilitar
+Docsss2 <- Docsss[-2] # Aqui já se tem o que cada documento é
+
+Docsss2
+```
+
+## Juntando tudo
+```{r}
+
+Documentos <- left_join(Documentos, Docsss2, by = "Documento")
+
+```
+
+
+## Extraindo informações (Mesmo formato)
+
+```{r}
+
+# CNPJ 
+
+Documentos$CNPJ <- ifelse(grepl("\\d{2}.\\d{3}.\\d{3}/\\d{4}-\\d{2}", Documentos$text), # Se identificar um padrão numérico
+                          as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}.\\d{3}.\\d{3}/\\d{4}-\\d{2}", simplify = TRUE)), # Extrair o padrão
+                          NA)
+
+```
+
+<!----
+Já o exemplo já foi dado, a partir daqui não vai aparecer no slide para ele não ficar gigante
+--->
+
+```{r, echo = FALSE}
+
+##CPF
+
+Documentos$CPF <- ifelse(grepl("\\d{3}.\\d{3}.\\d{3}-\\d{2}", Documentos$text),
+                            as.character(gsubfn::strapplyc(Documentos$text, "\\d{3}.\\d{3}.\\d{3}-\\d{2}", simplify = TRUE)),
+                            NA)
+
+## Inscrição
+
+Documentos$Inscri <- ifelse(grepl("\\d+.\\d+.\\d+/\\d+-\\d+", Documentos$text),
+                            as.character(gsubfn::strapplyc(Documentos$text, "\\d+.\\d+.\\d+/\\d+-\\d+", simplify = TRUE)),
+                            NA)
+
+## Razão social
+
+Documentos$RS <- ifelse(grepl("razao social:", Documentos$text), 
+                        gsub(".*:", "", Documentos$text), 
+                        NA)
+
+## Nome
+
+Documentos$Nome <- ifelse(grepl("nome: ", Documentos$text), 
+                          gsub(".*:", "", Documentos$text), 
+                          NA)
+
+
+
+## Processo
+
+Documentos$Processo <- ifelse(grepl("\\d{7}-\\d{2}.\\d{4}.\\d{1}.\\d{2}.\\d{4}", Documentos$text),
+                              as.character(gsubfn::strapplyc(Documentos$text, "\\d{7}-\\d{2}.\\d{4}.\\d{1}.\\d{2}.\\d{4}", simplify = TRUE)),
+                              NA)
+
+## Situação Cadastral
+Documentos$Situcad <- ifelse(grepl("situacao cadastral: ", Documentos$text), 
+                             gsub(".*: ", "", Documentos$text), 
+                             NA)
+
+## Data de nascimento
+Documentos$NASCI <- ifelse(grepl("data de nascimento", Documentos$text), 
+                           as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)), 
+                           NA)
+
+## Data de inscrtição
+Documentos$DATINSCRI <- ifelse(grepl("data da inscricao", Documentos$text), 
+                               gsub(".*: ", "", Documentos$text), 
+                               NA) %>%
+  str_squish()
+
+## Situação
+
+Documentos$SITU <- ifelse(grepl("esta em situacao", Documentos$text), # Se identificar esse texto
+                          gsub(".*esta em situacao ", "", Documentos$text), # Copirar a linha dele e subistituir ele e tudo que está antes por nada 
+                          NA)
+
+Documentos$SITU <- gsub(" perante.*", "", Documentos$SITU) # Substituir tudo que está depois de perante por nada
+
+```
+
+
+## Extraindo informações (Formatos diferentes)
+
+1. Documentos diferentes com uma informação similar.  
+1.1 Especificar o tipo de documento e extrair a informação naquele formato
+
+
+## ## Extraindo informações (Formatos diferentes)
+
+```{r}
+# Número da certidão
+Documentos$NCERT <- ifelse(grepl("CertReguFiscal", Documentos$OQue) &
+                             grepl("numero da certidao:", Documentos$text), # Se identificar esse texto
+                           as.character(gsubfn::strapplyc(Documentos$text, "\\d{4}.\\d+-\\d{2}", simplify = TRUE)), # Extrair esse padrão numérico
+                           NA)
+
+Documentos$NCERT <- ifelse(grepl("CRF", Documentos$OQue) & # Se for qualquer tipo de CRF
+                             grepl("certificacao numero: ", Documentos$text), # Usar esse outro padrão
+                           gsub(".*: ", "", Documentos$text), # Retirar o texto que vem antes
+                           Documentos$NCERT) # Repetir o que já se tinha
+
+```
+
+
+## Extraindo informações (Formatos diferentes)
+
+```{r}
+Documentos$NCERT <- ifelse(grepl(c("Cert. Negativa de Deb. Trabalhistas|Cert. Posi. com efeito de Negativa de Deb. Trabalhistas"), 
+# Aqui se usa esse c() com a | separando o tipo de documento porque às vezes documentos muito diferentes podem ter padrões iguais, ai nesse caso se pede pra identificar esse ou aquele documento com o grelp, mas como ambas são de débitos trabalhistas era possível usar por exemplo apenas o grelp e "Deb. Trabalhistas", como foi feito com as CRFs que tem mais de um tipo, mas todos os nomes das categorias tem CRF
+                                 Documentos$OQue) &
+                             grepl("certidao no: ", Documentos$text),
+                           as.character(gsubfn::strapplyc(Documentos$text, "\\d+/\\d{4}", simplify = TRUE)),
+                           Documentos$NCERT)
+
+```
+
+<!----
+Já o exemplo já foi dado, a partir daqui não vai aparecer no slide para ele não ficar gigante
+--->
+
+```{r, echo = FALSE}
+
+## Emissão
+
+Documentos$EMI <- ifelse(grepl("CertReguFiscal", Documentos$OQue) &
+                           grepl("data de emissao:", Documentos$text),
+                         as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)),
+                         NA)
+
+Documentos$EMI <- ifelse(grepl("CRF", Documentos$OQue) &
+                           grepl(c("validade:\\d{2}/\\d{2}/\\d{4} a |validade: \\d{2}/\\d{2}/\\d{4} a "), Documentos$text), 
+                         gsub(" a \\d{2}/\\d{2}/\\d{4}.*", "", Documentos$text),
+                         Documentos$EMI)
+# Ficou a "validade:", tem que tirar
+Documentos$EMI <- gsub(".*: ", "", Documentos$EMI) # tirando tudo que vem antes de ": "
+Documentos$EMI <- gsub(".*:", "", Documentos$EMI) # tirando tudo que vem antes de ":"
+
+Documentos$EMI <- ifelse(grepl("Deb. Trabalhistas", Documentos$OQue) &
+                           grepl("expedicao: ", Documentos$text), 
+                         as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)),
+                         Documentos$EMI)
+
+Documentos$EMI <- ifelse(grepl("CompSituCPF", Documentos$OQue) &
+                           grepl("comprovante emitido as", Documentos$text), 
+                         as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)), 
+                         Documentos$EMI)
+
+Documentos$EMI <- ifelse(grepl("PC - ", Documentos$OQue) &
+                           grepl("emitida as ", Documentos$text), 
+                         as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)), 
+                         Documentos$EMI)
+
+## Validade
+
+Documentos$Vali <- ifelse(grepl(c("Regul. Fazenda Federal|PC - |CertReguFiscal"), Documentos$OQue) &
+                                   grepl("valida ate", Documentos$text), 
+                          as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)), 
+                          NA)
+
+Documentos$Vali <- ifelse(grepl("Deb. Trabalhistas", Documentos$OQue) &
+                            grepl("validade: ", Documentos$text), 
+                          as.character(gsubfn::strapplyc(Documentos$text, "\\d{2}/\\d{2}/\\d{4}", simplify = TRUE)), 
+                          Documentos$Vali) 
+
+Documentos$Vali <- ifelse(grepl("CRF", Documentos$OQue) &
+                            grepl(c("validade:\\d{2}/\\d{2}/\\d{4} a |validade: \\d{2}/\\d{2}/\\d{4} a "), Documentos$text), 
+                          gsub(".*\\d{2}/\\d{2}/\\d{4} a ", "", Documentos$text),
+                          Documentos$Vali)
+
+```
+
+
+## Extraindo informações (Casos de edição)
+
+1.  Em alguns casos vai ser "código xxxxx", outros "código de verificação/controle: xxxxxx".   
+1.1 A solução foi extrair o que está na linha do código e depois editar
+
+```{r}
+
+# Código
+Documentos$Cod <- ifelse(grepl("codigo ", Documentos$text), 
+                         gsub(".*codigo ", "", Documentos$text), 
+                         NA)
+
+Documentos$Cod <- gsub(".*: ", "", Documentos$Cod) # retirar tudo que vem antes de :
+Documentos$Cod <- ifelse(grepl("tributario nacional.*", Documentos$Cod), NA, Documentos$Cod) # retirar tudo que vem depois
+
+Documentos$Cod <- Documentos$Cod %>%
+  str_squish() # Remover espços maiores que " "
+
+```
+
+
+## Extraindo informações (Casos especiais)
+
+1. Aqui acontece que o código que autenticidade dava conflito nas CRFs.   
+1.1 Então o comando adiciona o !grelp que funciona como um grelp ao contrário, ou seja, quando não se identificar aquilo e se achar o padrão numérico
+
+```{r}
+
+## Código de autenticidade
+
+Documentos$Acod <- ifelse(!grepl("CRF", Documentos$OQue) &
+                            grepl("\\d{3}.\\d{4}.\\d{4}", Documentos$text),
+                          as.character(gsubfn::strapplyc(Documentos$text, "\\d{3}.\\d{4}.\\d{4}", simplify = TRUE)),
+                          NA)
+
+```
+
+## Juntando tudo
+
+1. Separar o que se queria.  
+2. Renomear.  
+3. Agregar os casos únicos.  
+
+
+## Juntando tudo (Separando)
+
+```{r}
+TabelaFinal <- as.data.frame(cbind(Documentos$Documento, Documentos$OQue, 
+                                  Documentos$CNPJ, Documentos$CPF, 
+                                  Documentos$RS, Documentos$Nome,
+                                  Documentos$Acod, Documentos$Cod,
+                                  Documentos$NASCI, Documentos$DATINSCRI,
+                                  Documentos$Situcad, Documentos$Processo, 
+                                  Documentos$EMI, Documentos$Vali, 
+                                  Documentos$SITU, Documentos$NCERT))
+```
+
+
+## Juntando tudo (Renomeando)
+
+```{r}
+
+TabelaFinal <- TabelaFinal %>%
+  rename(Documento = V1,
+         TIPO = V2,
+         CNPJ = V3,
+         CPF = V4,
+         RAZAOSOCIAL = V5,
+         NOME = V6,
+         ACOD = V7,
+         COD = V8,
+         NASCI = V9,
+         DATINSCRI = V10,
+         SITUCAD = V11,
+         PROCESSO = V12,
+         EMI = V13,
+         VALI = V14,
+         SITU = V15,
+         NCERT = V16)
+
+```
+
+
+## Juntando tudo (Agregando)
+
+```{r}
+
+TabelaFinal <- TabelaFinal %>% group_by(Documento) %>% # Dterminar grupos
+  fill(TIPO, CNPJ, CPF, RAZAOSOCIAL, NOME, ACOD, COD, NASCI, DATINSCRI, SITUCAD, PROCESSO, EMI, VALI, SITU, NCERT, # Completar de acordoco com
+       .direction = "downup") %>%  # Direção na qual preencher valores faltantes, "downup" - primeiro para baixo e depois para cima
+  # Basicamente o fill serve para deixar tudo igual, preenchendo de acordo com os grupos mostrados na V1
+  distinct()
+
+```
+
+
+## No fim temos
+
+```{r}
+
+TabelaFinal
+setwd("C:/Users/Danilo/Desktop/Coisas Relevantes/Trabalhos em andamento/Usina/Dados/Documentos/Teste") # Selecionando uma pasta
+# Salvando em Xlsx
+writexl::write_xlsx(TabelaFinal, "TabelaFinal.xlsx")
+```
+
+
+# Do processo
+
+## Desafios
+
+1. Ser um programador formado no CFCH.  
+2. Infraestrutura.  
+2.1 Teve um momento que meu computador deu problema e atrasou tudo.  
+3. Participação do time que faz isso manualmente.  
+3.1 Foi muito mais fácil avançar no código depois que a planilha com o que era pra ser extraído e os padrões foi feita.   
+
+## Aprendizados
+
+1. Ser um programador formado no CFCH.  
+
+
+# Para o futuro
+
+## O que pode melhorar
+
+1. Adicionar uma camada de IA para as certidões municipais.  
+
+
